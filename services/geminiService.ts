@@ -3,7 +3,16 @@ import { GoogleGenAI } from "@google/genai";
 import { ParaphraseTone } from "../types";
 
 export const paraphraseText = async (text: string, tone: ParaphraseTone): Promise<string> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  // Check for various ways environment variables are exposed in different build tools
+  // @ts-ignore - Support both standard process.env and Vite's import.meta.env
+  const apiKey = (typeof process !== 'undefined' ? process.env?.API_KEY : undefined) || 
+                 (import.meta as any).env?.VITE_API_KEY;
+
+  if (!apiKey || apiKey === "undefined" || apiKey === "") {
+    throw new Error("Quizontal API Key is not configured. On Vercel/Vite, please ensure you have an environment variable named 'VITE_API_KEY'.");
+  }
+
+  const ai = new GoogleGenAI({ apiKey: apiKey });
   
   const systemInstruction = `
     You are a world-class professional editor and writing assistant for the brand "Quizontal". 
@@ -32,8 +41,11 @@ export const paraphraseText = async (text: string, tone: ParaphraseTone): Promis
     });
 
     return response.text?.trim() || "Failed to generate paraphrase. Please try again.";
-  } catch (error) {
+  } catch (error: any) {
     console.error("Gemini API Error:", error);
+    if (error.message?.includes("API key")) {
+      throw new Error("Invalid API Key. Please check your Vercel Environment Variables and ensure VITE_API_KEY is correct.");
+    }
     throw new Error("The AI service is temporarily unavailable. Please check your connection.");
   }
 };
