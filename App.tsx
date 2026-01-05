@@ -1,40 +1,22 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { ParaphraseTone, ParaphraseHistoryItem } from './types';
 import { paraphraseText } from './services/geminiService';
 import Header from './components/Header';
-import HistoryPanel from './components/HistoryPanel';
-import ToneSelector from './components/ToneSelector';
+import Footer from './components/Footer';
 
 const App: React.FC = () => {
   const [inputText, setInputText] = useState('');
   const [outputText, setOutputText] = useState('');
+  const [isEditing, setIsEditing] = useState(true);
   const [selectedTone, setSelectedTone] = useState<ParaphraseTone>(ParaphraseTone.STANDARD);
   const [isLoading, setIsLoading] = useState(false);
-  const [history, setHistory] = useState<ParaphraseHistoryItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
 
-  // Load history from localStorage
-  useEffect(() => {
-    const saved = localStorage.getItem('quizontal_history');
-    if (saved) {
-      try {
-        setHistory(JSON.parse(saved));
-      } catch (e) {
-        console.error("Failed to load history", e);
-      }
-    }
-  }, []);
-
-  // Save history to localStorage
-  useEffect(() => {
-    localStorage.setItem('quizontal_history', JSON.stringify(history));
-  }, [history]);
-
   const handleParaphrase = async () => {
     if (!inputText.trim()) {
-      setError("Please enter some text to paraphrase.");
+      setError("Please enter some text to transform.");
       return;
     }
     
@@ -43,16 +25,11 @@ const App: React.FC = () => {
     try {
       const result = await paraphraseText(inputText, selectedTone);
       setOutputText(result);
+      setIsEditing(false);
       
-      const newItem: ParaphraseHistoryItem = {
-        id: Date.now().toString(),
-        original: inputText,
-        paraphrased: result,
-        tone: selectedTone,
-        timestamp: Date.now(),
-      };
-      
-      setHistory(prev => [newItem, ...prev].slice(0, 10)); // Keep last 10
+      const history = JSON.parse(localStorage.getItem('quizontal_history') || '[]');
+      const newItem = { id: Date.now().toString(), original: inputText, paraphrased: result, tone: selectedTone, timestamp: Date.now() };
+      localStorage.setItem('quizontal_history', JSON.stringify([newItem, ...history].slice(0, 10)));
     } catch (err: any) {
       setError(err.message || "Something went wrong.");
     } finally {
@@ -60,185 +37,183 @@ const App: React.FC = () => {
     }
   };
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
+  const copyToClipboard = () => {
+    navigator.clipboard.writeText(outputText);
     setCopyStatus("Copied!");
     setTimeout(() => setCopyStatus(null), 2000);
   };
 
-  const clearAll = () => {
-    setInputText('');
+  const reset = () => {
+    setIsEditing(true);
     setOutputText('');
     setError(null);
   };
 
-  const handleRestore = useCallback((item: ParaphraseHistoryItem) => {
-    setInputText(item.original);
-    setOutputText(item.paraphrased);
-    setSelectedTone(item.tone);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }, []);
+  const highlightedResult = useMemo(() => {
+    if (!outputText || !inputText) return null;
+    const inputWords = new Set(inputText.toLowerCase().split(/\s+/));
+    return outputText.split(/(\s+)/).map((part, i) => {
+      const isWord = /\w+/.test(part);
+      const isNew = isWord && !inputWords.has(part.toLowerCase().replace(/[.,!?;:]/g, ''));
+      return (
+        <span key={i} className={isNew ? "bg-purple-50 text-purple-700 font-bold underline decoration-purple-300 decoration-2 underline-offset-4" : ""}>
+          {part}
+        </span>
+      );
+    });
+  }, [outputText, inputText]);
 
   return (
-    <div className="min-h-screen flex flex-col items-center pb-12">
+    <div className="min-h-screen bg-[#FDFDFF] flex flex-col font-sans selection:bg-purple-100 selection:text-purple-900">
       <Header />
       
-      <main className="w-full max-w-6xl px-4 sm:px-6 lg:px-8 mt-8 grid grid-cols-1 lg:grid-cols-4 gap-8">
+      {/* Background Accent Gradients */}
+      <div className="fixed inset-0 pointer-events-none -z-10 overflow-hidden">
+        <div className="absolute top-[-10%] right-[-10%] w-[50%] h-[50%] bg-purple-100/40 rounded-full blur-[120px]"></div>
+        <div className="absolute bottom-[-10%] left-[-10%] w-[50%] h-[50%] bg-blue-100/40 rounded-full blur-[120px]"></div>
+      </div>
+
+      <main className="flex-grow w-full max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8 py-6 md:py-16">
         
-        <div className="lg:col-span-3 space-y-6">
-          <div className="glass-morphism rounded-2xl p-6 shadow-xl border border-white/40">
-            <div className="flex flex-col md:flex-row gap-4 mb-6">
-              <div className="flex-1">
-                <ToneSelector 
-                  selected={selectedTone} 
-                  onSelect={setSelectedTone} 
-                />
-              </div>
-              <button
-                onClick={handleParaphrase}
-                disabled={isLoading || !inputText.trim()}
-                className={`px-8 py-3 rounded-xl font-bold text-white transition-all duration-300 shadow-lg flex items-center justify-center gap-2 ${
-                  isLoading || !inputText.trim() 
-                  ? 'bg-slate-400 cursor-not-allowed' 
-                  : 'bg-indigo-600 hover:bg-indigo-700 hover:-translate-y-0.5 active:scale-95'
-                }`}
-              >
-                {isLoading ? (
-                  <>
-                    <svg className="animate-spin h-5 w-5 text-white" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    Paraphrasing...
-                  </>
-                ) : "Paraphrase Now"}
-              </button>
+        {/* Hero Section - Stacked and Centered */}
+        <div className="max-w-3xl mx-auto text-center mb-8 md:mb-16 animate-fade-in">
+          <div className="inline-flex items-center gap-2 bg-white px-3 py-1.5 rounded-full border border-purple-100 shadow-sm mb-4 md:mb-6">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-purple-600"></span>
+            </span>
+            <span className="text-[10px] font-black text-purple-600 uppercase tracking-widest">AI Content Engine</span>
+          </div>
+          
+          <h1 className="brand-font text-2xl md:text-6xl font-extrabold text-gray-900 leading-tight mb-4 md:mb-6">
+            Refine Your Voice with <span className="text-purple-600">AI Excellence.</span>
+          </h1>
+          
+          <p className="text-sm md:text-xl text-gray-500 font-medium leading-relaxed max-w-2xl mx-auto px-4">
+            The world's most intuitive paraphrasing tool. Instantly rewrite text to improve clarity, change tone, and ensure originality.
+          </p>
+        </div>
+
+        {/* Unified Tool Container - Below Hero */}
+        <div className="max-w-4xl mx-auto animate-fade-in" style={{ animationDelay: '0.2s' }}>
+          <div className="bg-white rounded-[20px] md:rounded-[40px] shadow-[0_24px_64px_rgba(0,0,0,0.06)] md:shadow-[0_32px_80px_rgba(0,0,0,0.08)] border border-gray-100 overflow-hidden relative">
+            
+            {/* Tone Selector / Tabs */}
+            <div className="px-4 md:px-6 py-2 md:py-3 border-b border-gray-50 bg-gray-50/30 flex items-center gap-1.5 md:gap-2 overflow-x-auto no-scrollbar scroll-smooth">
+              {Object.values(ParaphraseTone).map((tone) => (
+                <button
+                  key={tone}
+                  onClick={() => setSelectedTone(tone)}
+                  className={`whitespace-nowrap px-3.5 md:px-5 py-2 md:py-2.5 rounded-lg md:rounded-2xl text-[11px] md:text-[13px] font-bold transition-all ${
+                    selectedTone === tone
+                      ? 'bg-purple-600 text-white shadow-md'
+                      : 'text-gray-500 hover:text-purple-600 hover:bg-white bg-white/50 border border-gray-100'
+                  }`}
+                >
+                  {tone}
+                </button>
+              ))}
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Input Area */}
-              <div className="relative">
-                <label className="block text-sm font-semibold text-slate-700 mb-2">Original Text</label>
-                <textarea
-                  value={inputText}
-                  onChange={(e) => setInputText(e.target.value)}
-                  placeholder="Paste your text here to transform it..."
-                  className="w-full h-80 p-4 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none bg-white/50 backdrop-blur-sm transition-all text-slate-800 leading-relaxed"
-                />
-                <div className="absolute bottom-4 right-4 text-xs font-medium text-slate-400">
-                  {inputText.length} characters
-                </div>
-                {inputText && (
-                  <button 
-                    onClick={clearAll}
-                    className="absolute top-9 right-4 text-slate-400 hover:text-red-500 text-xs flex items-center gap-1"
-                  >
-                    Clear All
-                  </button>
-                )}
-              </div>
-
-              {/* Output Area */}
-              <div className="relative">
-                <label className="block text-sm font-semibold text-slate-700 mb-2">Paraphrased Result</label>
-                <div className="w-full h-80 p-4 rounded-xl border border-slate-200 bg-white/80 backdrop-blur-md overflow-y-auto text-slate-800 leading-relaxed relative">
-                  {isLoading ? (
-                    <div className="flex flex-col items-center justify-center h-full space-y-3">
-                      <div className="flex space-x-2">
-                        <div className="w-2 h-2 bg-indigo-600 rounded-full animate-bounce" style={{ animationDelay: '0s' }}></div>
-                        <div className="w-2 h-2 bg-indigo-600 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-                        <div className="w-2 h-2 bg-indigo-600 rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></div>
-                      </div>
-                      <p className="text-sm text-slate-500 font-medium">Quizontal is rewriting...</p>
-                    </div>
-                  ) : outputText ? (
-                    <p className="whitespace-pre-wrap">{outputText}</p>
-                  ) : (
-                    <div className="flex flex-col items-center justify-center h-full text-slate-400 text-sm">
-                      <svg className="w-12 h-12 mb-2 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                      </svg>
-                      Your paraphrased text will appear here.
-                    </div>
-                  )}
-                </div>
-                {outputText && !isLoading && (
-                  <div className="absolute bottom-4 right-4 flex gap-2">
-                    <button
-                      onClick={() => copyToClipboard(outputText)}
-                      className="px-4 py-2 bg-white/90 border border-slate-200 rounded-lg text-sm font-semibold text-indigo-600 hover:bg-indigo-50 transition-colors shadow-sm flex items-center gap-2"
-                    >
-                      {copyStatus ? (
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
-                        </svg>
-                      ) : (
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
-                        </svg>
-                      )}
-                      {copyStatus || "Copy"}
-                    </button>
+            {/* Input & Output Area */}
+            <div className="relative">
+              <div className="min-h-[250px] md:min-h-[500px] flex flex-col">
+                {isEditing ? (
+                  <textarea
+                    value={inputText}
+                    onChange={(e) => setInputText(e.target.value)}
+                    placeholder="Paste your content here..."
+                    className="flex-grow w-full p-6 md:p-12 text-base md:text-2xl text-gray-800 placeholder-gray-300 outline-none resize-none leading-relaxed bg-transparent font-medium"
+                    autoFocus
+                  />
+                ) : (
+                  <div className="flex-grow w-full p-6 md:p-12 text-base md:text-2xl text-gray-800 leading-relaxed animate-fade-in whitespace-pre-wrap font-medium">
+                    {highlightedResult}
                   </div>
                 )}
               </div>
+
+              {/* Processing Overlay - FIXED FOR MOBILE */}
+              {isLoading && (
+                <div className="absolute inset-0 bg-white/95 backdrop-blur-md z-[50] flex flex-col items-center justify-center space-y-4 md:space-y-6">
+                  <div className="relative">
+                    <div className="w-12 h-12 md:w-20 md:h-20 border-4 md:border-8 border-purple-50 rounded-full"></div>
+                    <div className="absolute inset-0 w-12 h-12 md:w-20 md:h-20 border-4 md:border-8 border-purple-600 border-t-transparent rounded-full animate-spin"></div>
+                  </div>
+                  <div className="text-center px-4">
+                    <p className="text-purple-600 font-black uppercase tracking-[0.2em] text-[10px] md:text-sm mb-1">Processing Text</p>
+                    <p className="text-gray-400 font-bold text-[10px] md:text-xs">Using {selectedTone} model...</p>
+                  </div>
+                </div>
+              )}
             </div>
 
-            {error && (
-              <div className="mt-6 p-4 bg-red-50 border border-red-100 rounded-xl text-red-600 text-sm flex items-center gap-3">
-                <svg className="w-5 h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                </svg>
-                {error}
+            {/* Action Bar Footer */}
+            <div className="p-4 md:p-8 border-t border-gray-50 bg-white flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div className="flex items-center gap-2">
+                <div className={`w-2 h-2 md:w-2.5 md:h-2.5 rounded-full ${isEditing ? 'bg-amber-400' : 'bg-green-500'}`}></div>
+                <span className="text-[9px] md:text-[10px] font-black uppercase tracking-widest text-gray-400">
+                  {isEditing ? 'Ready for input' : 'Success'}
+                </span>
               </div>
-            )}
+
+              <div className="flex gap-2 w-full sm:w-auto">
+                {isEditing ? (
+                  <button
+                    onClick={handleParaphrase}
+                    disabled={isLoading || !inputText.trim()}
+                    className="w-full sm:w-auto bg-purple-600 text-white px-6 md:px-12 py-3 md:py-4.5 rounded-lg md:rounded-2xl font-black text-xs md:text-lg hover:bg-purple-700 transition-all shadow-lg md:shadow-xl shadow-purple-100 active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    <svg className="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                    PARAPHRASE
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      onClick={copyToClipboard}
+                      className="flex-1 sm:flex-none bg-gray-900 text-white px-4 md:px-10 py-3 md:py-4.5 rounded-lg md:rounded-2xl font-black text-xs md:text-lg hover:bg-black transition-all flex items-center justify-center gap-2"
+                    >
+                      {copyStatus ? "COPIED" : "COPY"}
+                    </button>
+                    <button 
+                      onClick={reset}
+                      className="px-4 md:px-8 py-3 md:py-4.5 rounded-lg md:rounded-2xl border-2 border-gray-100 font-black text-gray-400 hover:text-purple-600 hover:border-purple-100 transition-all text-xs md:text-lg"
+                    >
+                      NEW
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <FeatureCard 
-              icon={<svg className="w-6 h-6 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>}
-              title="Ultra Fast"
-              desc="Powered by Gemini 3 Flash for instant high-quality results."
-            />
-            <FeatureCard 
-              icon={<svg className="w-6 h-6 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04M12 20.944a11.955 11.955 0 01-8.618-3.04m17.236 0a11.955 11.955 0 01-8.618 3.04" /></svg>}
-              title="Plagiarism-Free"
-              desc="Ensures unique phrasing while preserving your original ideas."
-            />
-            <FeatureCard 
-              icon={<svg className="w-6 h-6 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" /></svg>}
-              title="Tone Control"
-              desc="Adjust your writing style from casual to academic in one click."
-            />
-          </div>
+          {error && (
+            <div className="mt-4 p-3 bg-red-50 border border-red-100 rounded-xl text-red-600 text-[10px] md:text-sm font-bold flex items-center gap-2">
+              <svg className="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
+              {error}
+            </div>
+          )}
         </div>
-
-        {/* Sidebar */}
-        <div className="lg:col-span-1">
-          <HistoryPanel history={history} onRestore={handleRestore} />
-        </div>
-
       </main>
 
-      <footer className="mt-12 text-slate-500 text-sm font-medium">
-        © {new Date().getFullYear()} Quizontal Paraphrase. All rights reserved.
-      </footer>
+      <Footer />
+
+      <style>{`
+        @keyframes fade-in {
+          from { opacity: 0; transform: translateY(20px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in { animation: fade-in 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        .brand-font { font-family: 'Lexend', sans-serif; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        @media (max-width: 640px) {
+          .md\\:py-4.5 { padding-top: 0.75rem; padding-bottom: 0.75rem; }
+        }
+      `}</style>
     </div>
   );
 };
-
-interface FeatureCardProps {
-  icon: React.ReactNode;
-  title: string;
-  desc: string;
-}
-
-const FeatureCard: React.FC<FeatureCardProps> = ({ icon, title, desc }) => (
-  <div className="glass-morphism p-5 rounded-2xl border border-white/50 shadow-sm transition-transform hover:scale-105">
-    <div className="mb-3">{icon}</div>
-    <h3 className="font-bold text-slate-800 mb-1">{title}</h3>
-    <p className="text-xs text-slate-500 leading-relaxed">{desc}</p>
-  </div>
-);
 
 export default App;

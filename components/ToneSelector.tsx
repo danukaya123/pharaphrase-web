@@ -11,15 +11,15 @@ const ToneSelector: React.FC<ToneSelectorProps> = ({ selected, onSelect }) => {
   const tones = Object.values(ParaphraseTone);
 
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="flex flex-wrap gap-2.5">
       {tones.map((tone) => (
         <button
           key={tone}
           onClick={() => onSelect(tone)}
-          className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 border ${
+          className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 border-2 ${
             selected === tone
-              ? 'bg-indigo-600 text-white border-indigo-600 shadow-md transform scale-105'
-              : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300 hover:bg-indigo-50'
+              ? 'bg-purple-600 text-white border-purple-600 shadow-lg shadow-purple-100 -translate-y-0.5'
+              : 'bg-white text-gray-600 border-gray-100 hover:border-purple-200 hover:text-purple-600 hover:bg-purple-50/30'
           }`}
         >
           {tone}
