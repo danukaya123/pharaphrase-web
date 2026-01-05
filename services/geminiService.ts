@@ -1,8 +1,5 @@
 import { ParaphraseTone } from "../types";
 
-/**
- * Robustly retrieves the API key from environment variables.
- */
 const getSanitizedApiKey = (): string | null => {
   let key: any = null;
   try {
@@ -20,26 +17,26 @@ const getSanitizedApiKey = (): string | null => {
   return key.trim().replace(/^["']|["']$/g, '');
 };
 
-export const paraphraseText = async (text: string, tone: ParaphraseTone): Promise<string> => {
+// List of free models to try in order of quality
+const FREE_MODELS = [
+  "google/gemini-2.0-flash-exp:free",
+  "meta-llama/llama-3.3-70b-instruct:free",
+  "mistralai/mistral-7b-instruct:free",
+  "google/gemini-pro-1.5:free"
+];
+
+export const paraphraseText = async (text: string, tone: ParaphraseTone, modelIndex = 0): Promise<string> => {
   const apiKey = getSanitizedApiKey();
 
   if (!apiKey) {
-    throw new Error(
-      "OpenRouter API Key is missing. Please add 'VITE_OPENROUTER_API_KEY' to your environment variables."
-    );
+    throw new Error("OpenRouter API Key is missing in your environment variables.");
   }
 
   const systemInstruction = `
-    You are a world-class professional editor and writing assistant for the brand "Quizontal". 
-    Your task is to humanize and paraphrase the user's input text.
-    
-    Tone Goal: ${tone}
-
-    Guidelines:
-    - Remove common AI tropes and "corporate speak".
-    - Vary sentence structure and length for a natural human flow.
-    - Maintain the original meaning accurately.
-    - Return ONLY the paraphrased text. No introductory remarks.
+    You are an expert editor for "Quizontal". 
+    Rewrite this text to sound like a human. 
+    Tone: ${tone}. 
+    Return ONLY the rewritten text.
   `;
 
   try {
@@ -47,35 +44,39 @@ export const paraphraseText = async (text: string, tone: ParaphraseTone): Promis
       method: "POST",
       headers: {
         "Authorization": `Bearer ${apiKey}`,
-        "HTTP-Referer": window.location.origin, // Required by OpenRouter
-        "X-Title": "Quizontal Humanizer",       // Required by OpenRouter
+        "HTTP-Referer": window.location.origin,
+        "X-Title": "Quizontal Humanizer",
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        "model": "google/gemini-2.0-flash-exp:free", // You can change this to any OpenRouter model
+        "model": FREE_MODELS[modelIndex],
         "messages": [
           { "role": "system", "content": systemInstruction },
           { "role": "user", "content": text }
         ],
-        "temperature": 0.7,
+        "temperature": 0.8,
       })
     });
 
+    // If 429 (Too Many Requests) and we have more models to try
+    if (response.status === 429 && modelIndex < FREE_MODELS.length - 1) {
+      console.warn(`Model ${FREE_MODELS[modelIndex]} busy. Trying fallback: ${FREE_MODELS[modelIndex + 1]}`);
+      return paraphraseText(text, tone, modelIndex + 1);
+    }
+
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData?.error?.message || `API Error: ${response.status}`);
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData?.error?.message || `Error ${response.status}`);
     }
 
     const data = await response.json();
-    const result = data.choices[0]?.message?.content;
+    return data.choices[0]?.message?.content.trim();
 
-    if (!result) {
-      throw new Error("The AI returned an empty response.");
-    }
-
-    return result.trim();
   } catch (error: any) {
-    console.error("OpenRouter API Error:", error);
-    throw new Error(error.message || "Quizontal encountered an error. Please try again.");
+    // Final fallback if the fetch itself fails
+    if (modelIndex < FREE_MODELS.length - 1) {
+        return paraphraseText(text, tone, modelIndex + 1);
+    }
+    throw new Error("All free models are currently busy. Please wait 10 seconds and try again.");
   }
 };
