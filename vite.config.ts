@@ -6,7 +6,7 @@ export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
 
     return {
-      base: '/paraphrase/',
+      base: '/ai-tools/paraphrase/',
 
       server: {
         port: 3000,
